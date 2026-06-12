@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { 
   LogOut, 
   BookOpen, 
@@ -8,16 +7,12 @@ import {
   Trophy, 
   Target, 
   Sparkles, 
-  X, 
-  Settings, 
-  Bell, 
-  Moon, 
-  Brain 
+  X 
 } from "lucide-react";
+import RSSSourceManager from "../components/profile/RSSSourceManager";
 
 export default function Profile({ user: activeUser, onLogout }) {
   const userId = activeUser.id;
-  const navigate = useNavigate();
   const [profileData, setProfileData] = useState(null);
   const [interests, setInterests] = useState([]);
   const [newInterest, setNewInterest] = useState("");
@@ -160,9 +155,11 @@ export default function Profile({ user: activeUser, onLogout }) {
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "2rem", alignItems: "start" }}>
+        {/* Feed Configuration — single column */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0rem" }}>
+
           {/* Interests Card */}
-          <div className="ai-panel" style={{ margin: 0 }}>
+          <div className="ai-panel" style={{ margin: 0, height: "100%", boxSizing: "border-box" }}>
             <div className="ai-panel-header">
               <div className="ai-icon"><Target size={18} /></div>
               <span className="ai-panel-title">Tailored Algorithm</span>
@@ -184,7 +181,6 @@ export default function Profile({ user: activeUser, onLogout }) {
                   borderRadius: "12px",
                   color: interest.source === 'inferred' ? "var(--accent-2)" : "var(--accent)",
                   fontWeight: "600",
-                  position: "relative"
                 }}>
                   {interest.interest_name}
                   {interest.source === 'inferred' && (
@@ -193,17 +189,10 @@ export default function Profile({ user: activeUser, onLogout }) {
                   <button 
                     onClick={() => handleOpenDeleteModal(interest.interest_name)}
                     style={{ 
-                      background: "none", 
-                      border: "none", 
+                      background: "none", border: "none", 
                       color: interest.source === 'inferred' ? "var(--accent-2)" : "var(--accent)", 
-                      cursor: "pointer",
-                      fontSize: "1.2rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 0,
-                      opacity: 0.7,
-                      marginLeft: "0.3rem"
+                      cursor: "pointer", display: "flex", alignItems: "center",
+                      padding: 0, opacity: 0.7, marginLeft: "0.3rem"
                     }}
                   >
                     <X size={14} />
@@ -230,32 +219,8 @@ export default function Profile({ user: activeUser, onLogout }) {
             </form>
           </div>
 
-          {/* Quick Settings Sidebar */}
-          <div className="sidebar-static" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div className="ai-panel" style={{ margin: 0, padding: "1.2rem", borderStyle: "solid" }}>
-              <span className="sidebar-section-title" style={{ marginBottom: "1rem", fontSize: "0.7rem" }}>Quick Settings</span>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
-                <button className="btn btn-secondary" style={{ width: "100%", justifyContent: "flex-start", fontSize: "0.8rem", gap: "0.8rem" }}>
-                  <Settings size={16} /> Preferences
-                </button>
-                <button className="btn btn-secondary" style={{ width: "100%", justifyContent: "flex-start", fontSize: "0.8rem", gap: "0.8rem" }}>
-                  <Bell size={16} /> Notifications
-                </button>
-                <button className="btn btn-secondary" style={{ width: "100%", justifyContent: "flex-start", fontSize: "0.8rem", gap: "0.8rem" }}>
-                  <Moon size={16} /> Dark Mode: On
-                </button>
-              </div>
-            </div>
-            
-            <div className="ai-context-section" style={{ margin: 0 }}>
-              <span className="ai-context-title">
-                <Brain size={16} style={{ color: "var(--accent)" }} /> IA Insight
-              </span>
-              <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: "1.5" }}>
-                Based on your last 5 articles read, you seem to be increasingly interested in <strong>geopolitics</strong>.
-              </p>
-            </div>
-          </div>
+          {/* RSS Sources */}
+          <RSSSourceManager />
         </div>
       </div>
 

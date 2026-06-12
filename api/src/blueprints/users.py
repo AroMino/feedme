@@ -6,11 +6,11 @@ from src.scorer import Scorer
 users_bp = Blueprint('users', __name__)
 db = DBManager()
 
-def run_rescoring(user_id):
+def run_rescoring(user_id, only_unscored=False):
     try:
-        # We create a new Scorer instance per thread to avoid connection pool issues if any
+        # We create a new Scorer instance per thread
         s = Scorer()
-        s.score_all_for_user(user_id)
+        s.score_all_for_user(user_id, only_unscored=only_unscored)
     except Exception as e:
         print(f"❌ Background re-scoring error for user {user_id}: {e}")
 
@@ -52,13 +52,40 @@ def get_interests(user_id):
 def add_interest(user_id):
     data = request.json
     interest_name = data.get('interest_name')
+    source = data.get('source', 'manual')
     if not interest_name:
         return jsonify({"error": "Interest name required"}), 400
     
-    db.add_user_interest(user_id, interest_name)
+    db.add_user_interest(user_id, interest_name, source=source)
+    
+    # Trigger background FULL re-scoring since interests changed
+    threading.Thread(target=run_rescoring, args=(user_id, False), daemon=True).start()
+    
     return jsonify({"status": "success", "interest_name": interest_name})
 
 @users_bp.route('/<int:user_id>/interests/<string:interest_name>', methods=['DELETE'])
 def remove_interest(user_id, interest_name):
     db.remove_user_interest(user_id, interest_name)
+    
+    # Trigger background FULL re-scoring to clean up
+    threading.Thread(target=run_rescoring, args=(user_id, False), daemon=True).start()
+    
     return jsonify({"status": "success"})
+
+@users_bp.route('/<int:user_id>/sync', methods=['POST'])
+def sync_user_feed(user_id):
+    """Synchronous scoring for 'connection time' refresh"""
+    try:
+        s = Scorer()
+        # Fast sync: only score articles without score
+        s.score_all_for_user(user_id, only_unscored=True)
+        return jsonify({"status": "success", "message": "Feed synchronized"})
+    except Exception as e:
+        error_msg = str(e)
+        print(f"❌ Error syncing feed for user {user_id}: {error_msg}")
+        
+        status_code = 500
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            status_code = 429
+            
+        return jsonify({"error": error_msg}), status_code

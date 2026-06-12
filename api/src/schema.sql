@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS articles (
     id VARCHAR(12) PRIMARY KEY,
     url TEXT UNIQUE,
+    source_id INTEGER,
     title TEXT,
     content TEXT,
     summary TEXT,
@@ -13,7 +14,7 @@ CREATE TABLE IF NOT EXISTS articles (
     global_relevance FLOAT,
     content_quality FLOAT,
     popularity_score FLOAT,
-    ai_context TEXT,
+    ai_explanation TEXT,
     ai_analysis TEXT,
     ai_commentary TEXT,
     status VARCHAR(20) DEFAULT 'pending'

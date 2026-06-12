@@ -1,18 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import { Newspaper, Zap } from "lucide-react";
 
-function formatDate(iso) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
+import { formatDateShort } from "../utils/dateUtils";
 
 export default function ArticleCard({ article, variant = "forYou" }) {
   const navigate = useNavigate();
   const score =
     variant === "trending" ? article.trending_score : article.for_you_score;
-
+  console.log(article)
   return (
     <div
       className="article-card"
@@ -36,7 +31,7 @@ export default function ArticleCard({ article, variant = "forYou" }) {
       <div className="article-card-body">
         <div className="article-card-meta">
           <span className="article-card-source">{article.author || "News Source"}</span>
-          <span className="article-card-date">{formatDate(article.published_at)}</span>
+          <span className="article-card-date">{formatDateShort(article.published_at)}</span>
         </div>
 
         <h3 className="article-card-title">{article.title}</h3>

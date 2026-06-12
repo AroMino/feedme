@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import ArticleCard from "../components/ArticleCard";
 import { Sparkles, AlertTriangle, Search } from "lucide-react";
+import { groupArticlesByDate } from "../utils/dateUtils";
 
 export default function ForYou({ user }) {
   const [articles, setArticles] = useState([]);
@@ -39,6 +40,8 @@ export default function ForYou({ user }) {
     );
   }
 
+  const grouped = groupArticlesByDate(articles);
+
   return (
     <div className="page">
       <div className="page-header">
@@ -51,16 +54,25 @@ export default function ForYou({ user }) {
         </p>
       </div>
 
-      {articles.length === 0 ? (
+      {grouped.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon"><Search size={48} /></div>
           <h3>No articles found</h3>
           <p>Try adding some interests to your profile to get personalized recommendations.</p>
         </div>
       ) : (
-        <div className="articles-grid">
-          {articles.map((article) => (
-            <ArticleCard key={article.id} article={article} variant="forYou" />
+        <div className="date-groups-container">
+          {grouped.map((group) => (
+            <div key={group.label} className="date-group">
+              <div className="date-separator">
+                <span>{group.label}</span>
+              </div>
+              <div className="articles-grid">
+                {group.items.map((article) => (
+                  <ArticleCard key={article.id} article={article} variant="forYou" />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

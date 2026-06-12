@@ -6,7 +6,7 @@ export const mockArticles = [
       "OpenAI's latest model demonstrates near-human reasoning across complex tasks. GPT-5 scores in the top 1% on standardized tests and can autonomously solve multi-step research problems with minimal prompting.",
     content:
       "OpenAI announced the release of GPT-5, their most capable language model yet. The model demonstrates unprecedented reasoning capabilities, scoring in the 99th percentile on bar exams, medical licensing tests, and advanced math competitions. The company has implemented several new safety measures including enhanced Constitutional AI training. Early access partners in healthcare and scientific research report transformative results, with one team using the model to accelerate drug-discovery timelines by 40%.",
-    ai_context: "The release of GPT-5 comes amid intense global competition in the AI sector, specifically focusing on logical reasoning rather than just pattern recognition. This model is seen as a direct challenge to DeepMind's Gemini 2.0 and Anthropic's Claude 4.",
+    ai_explanation: "The release of GPT-5 comes amid intense global competition in the AI sector, specifically focusing on logical reasoning rather than just pattern recognition. This model is seen as a direct challenge to DeepMind's Gemini 2.0 and Anthropic's Claude 4.",
     ai_analysis: "GPT-5's shift towards multi-step reasoning suggests OpenAI is moving closer to AGI. The improved score on standardized tests indicates a higher level of abstract generalization.",
     ai_commentary: "While technically impressive, the autonomous problem-solving feature raises significant safety and control questions that the industry is still struggling to address.",
     image_url:
@@ -29,7 +29,7 @@ export const mockArticles = [
       "After years of iterative testing, SpaceX's Starship has completed a full orbital mission and returned to its launch pad via the mechanical 'chopsticks' catching system — a milestone for reusable spaceflight.",
     content:
       "SpaceX successfully launched and recovered Starship during its Integrated Flight Test 7. The 122-meter rocket reached orbital velocity, deployed a dummy payload, re-entered the atmosphere, and was caught mid-air by the Super Heavy booster's Mechazilla tower arms. Elon Musk called it 'a giant leap for making life multiplanetary.' The FAA confirmed the mission met all safety requirements. NASA's Artemis program, which relies on Starship for lunar landings, cited the success as a key step toward the 2027 moon mission.",
-    ai_context: "Starship is the largest rocket ever built. This success validates SpaceX's iterative approach to aerospace engineering, moving away from the expensive, single-use models of the 20th century.",
+    ai_explanation: "Starship is the largest rocket ever built. This success validates SpaceX's iterative approach to aerospace engineering, moving away from the expensive, single-use models of the 20th century.",
     ai_analysis: "The catch-recovery mechanism (Mechazilla) is the most technologically challenging part of the flight. Its success drastically reduces the cost per kilogram of launching orbital payloads.",
     ai_commentary: "This accomplishment effectively puts NASA's Artemis schedule back on track, making 2027 a realistic date for the next human lunar landing.",
     image_url:

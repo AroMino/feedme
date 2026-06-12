@@ -12,7 +12,10 @@ import {
   Lightbulb, 
   FileSearch, 
   MessageSquare, 
-  X 
+  X,
+  Target,
+  Plus,
+  Check
 } from "lucide-react";
 
 function formatDate(iso) {
@@ -24,32 +27,49 @@ function formatDate(iso) {
   });
 }
 
+import { useToast } from "../context/ToastContext";
+
 export default function ArticleDetail({ user }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [article, setArticle] = useState(null);
+  const [userInterests, setUserInterests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [followLoading, setFollowLoading] = useState(null);
+
+  const fetchUserInterests = async () => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/users/${user.id}/interests`);
+      const data = await res.json();
+      setUserInterests(data.map(i => i.interest_name));
+    } catch (err) {
+      console.error("Failed to fetch interests", err);
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/articles/${id}?user_id=${user.id}`)
-      .then((res) => {
+    
+    Promise.all([
+      fetch(`http://localhost:5000/api/articles/${id}?user_id=${user.id}`).then(res => {
         if (!res.ok) throw new Error("Article not found");
         return res.json();
-      })
-      .then((data) => {
-        console.log(data)
-        setArticle(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Fetch error:", err);
-        setError(err.message);
-        setLoading(false);
-      });
+      }),
+      fetchUserInterests()
+    ])
+    .then(([artData]) => {
+      setArticle(artData);
+      setLoading(false);
+    })
+    .catch((err) => {
+      console.error("Fetch error:", err);
+      setError(err.message);
+      setLoading(false);
+    });
 
     // Record read after 3 seconds
     const timer = setTimeout(() => {
@@ -61,16 +81,60 @@ export default function ArticleDetail({ user }) {
     return () => clearTimeout(timer);
   }, [id, user.id]);
 
-  const handleAiAnalyze = () => {
+  const handleAiAnalyze = async () => {
     setSidebarOpen(true);
-    if (!article.ai_analysis) {
-       // If not in DB, we could trigger an enrichment here
-       // For now, let's just show what we have
-    }
+    
+    // If we already have analysis from a previous session or other user, don't re-run
+    if (article.ai_analysis) return;
+
     setAiLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/articles/${id}/analyze`, { method: "POST" });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setArticle(prev => ({
+          ...prev,
+          ...data
+        }));
+      } else {
+        console.error("Analysis failed:", data.error);
+        addToast(data.error || "Analysis failed. Please try again later.", "error");
+        // Don't keep sidebar open if it failed and we have no data
+        if (!article.ai_analysis) setSidebarOpen(false);
+      }
+    } catch (err) {
+      console.error("Analysis error:", err);
+      addToast("Connection error. Is the server running?", "error");
+      setSidebarOpen(false);
+    } finally {
       setAiLoading(false);
-    }, 1200);
+    }
+  };
+
+  const handleFollowTopic = async (topicName) => {
+    setFollowLoading(topicName);
+    try {
+      const res = await fetch(`http://localhost:5000/api/users/${user.id}/interests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          interest_name: topicName,
+          source: 'suggested'
+        })
+      });
+      if (res.ok) {
+        await fetchUserInterests();
+        addToast(`Now following ${topicName}`, "success");
+      } else {
+        addToast("Failed to follow topic", "error");
+      }
+    } catch (err) {
+      console.error("Failed to follow topic", err);
+      addToast("Network error while following topic", "error");
+    } finally {
+      setFollowLoading(null);
+    }
   };
 
   if (loading) {
@@ -128,7 +192,7 @@ export default function ArticleDetail({ user }) {
 
       {/* Topics */}
       <div className="detail-topics">
-        {article.topics.map((t) => (
+        {article?.topics?.map((t) => (
           <span key={t} className="topic-chip">
             {t}
           </span>
@@ -136,14 +200,14 @@ export default function ArticleDetail({ user }) {
       </div>
 
       {/* AI Context Section */}
-      {article.ai_context && (
+      {/* {article.ai_explanation && (
         <div className="ai-context-section">
           <div className="ai-context-title">
             <Brain size={20} color="var(--accent)" /> AI Context
           </div>
-          <p className="ai-panel-text">{article.ai_context}</p>
+          <p className="ai-panel-text">{article.ai_explanation}</p>
         </div>
-      )}
+      )} */}
 
       {/* Scores */}
       <div className="detail-scores">
@@ -197,6 +261,35 @@ export default function ArticleDetail({ user }) {
       {/* Full content */}
       <p className="detail-content">{article.content}</p>
 
+      {/* Refine Feed Section */}
+      {article?.suggested_topics?.length > 0 && (
+        <div className="refine-feed-card">
+          <div className="refine-feed-header">
+            <div className="refine-icon"><Target size={20} /></div>
+            <div className="refine-text">
+              <h4>Refine Your Feed</h4>
+              <p>Follow these broad categories to see more content like this.</p>
+            </div>
+          </div>
+          <div className="refine-topics">
+            {article?.suggested_topics?.map(t => {
+                const isFollowed = userInterests.includes(t);
+                return (
+                    <button 
+                        key={t} 
+                        className={`follow-chip ${isFollowed ? 'followed' : ''}`}
+                        onClick={() => !isFollowed && handleFollowTopic(t)}
+                        disabled={isFollowed || followLoading === t}
+                    >
+                        {isFollowed ? <Check size={14} /> : <Plus size={14} />}
+                        {t}
+                    </button>
+                );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Sidebar Overlay */}
       <div 
         className={`sidebar-overlay ${sidebarOpen ? 'active' : ''}`} 
@@ -217,31 +310,43 @@ export default function ArticleDetail({ user }) {
         {aiLoading ? (
           <div className="ai-loading" style={{ marginTop: '2rem' }}>
             <div className="spinner" />
-            L'IA approfondit son analyse…
+            <p>L'IA approfondit son analyse…</p>
           </div>
         ) : (
-          <>
+          <div className="sidebar-content animate">
             <div className="sidebar-section" style={{ marginTop: '1rem' }}>
               <span className="sidebar-section-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <Lightbulb size={16} /> Explanation
               </span>
-              <p className="sidebar-section-text">{article.ai_context}</p>
+              <p className="sidebar-section-text" style={{ whiteSpace: 'pre-wrap' }}>
+                {typeof article?.ai_explanation === 'object' 
+                  ? JSON.stringify(article.ai_explanation, null, 2) 
+                  : (article?.ai_explanation || "Analysis pending...")}
+              </p>
             </div>
 
             <div className="sidebar-section">
               <span className="sidebar-section-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <FileSearch size={16} /> Detailed Analysis
               </span>
-              <p className="sidebar-section-text">{article.ai_analysis}</p>
+              <p className="sidebar-section-text" style={{ whiteSpace: 'pre-wrap' }}>
+                {typeof article?.ai_analysis === 'object' 
+                  ? JSON.stringify(article.ai_analysis, null, 2) 
+                  : (article?.ai_analysis || "No deep analysis available.")}
+              </p>
             </div>
 
             <div className="sidebar-section">
               <span className="sidebar-section-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <MessageSquare size={16} /> AI Commentary
               </span>
-              <p className="sidebar-section-text">{article.ai_commentary}</p>
+              <p className="sidebar-section-text" style={{ whiteSpace: 'pre-wrap' }}>
+                {typeof article?.ai_commentary === 'object' 
+                  ? JSON.stringify(article.ai_commentary, null, 2) 
+                  : (article?.ai_commentary || "No commentary available yet.")}
+              </p>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>

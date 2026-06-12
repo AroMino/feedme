@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import ArticleCard from "../components/ArticleCard";
 import { Flame, AlertTriangle, TrendingUp } from "lucide-react";
+import { groupArticlesByDate } from "../utils/dateUtils";
 
 export default function Trending() {
   const [articles, setArticles] = useState([]);
@@ -41,6 +42,8 @@ export default function Trending() {
     );
   }
 
+  const grouped = groupArticlesByDate(articles);
+
   return (
     <div className="page">
       <div className="page-header">
@@ -53,30 +56,25 @@ export default function Trending() {
         </p>
       </div>
 
-      {articles.length === 0 ? (
+      {grouped.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon"><TrendingUp size={48} /></div>
           <p>No trending articles at the moment.</p>
         </div>
       ) : (
-        <div className="articles-grid">
-          {articles.map((article, i) => (
-            <div key={article.id} style={{ position: "relative" }}>
-              {i < 3 && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: "12px",
-                    right: "16px",
-                    zIndex: 1,
-                    fontSize: "1.1rem",
-                    lineHeight: 1,
-                  }}
-                >
-                  {["🥇", "🥈", "🥉"][i]}
-                </span>
-              )}
-              <ArticleCard article={article} variant="trending" />
+        <div className="date-groups-container">
+          {grouped.map((group) => (
+            <div key={group.label} className="date-group">
+              <div className="date-separator">
+                <span>{group.label}</span>
+              </div>
+              <div className="articles-grid">
+                {group.items.map((article) => (
+                  <div key={article.id} style={{ position: "relative" }}>
+                    <ArticleCard article={article} variant="trending" />
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>

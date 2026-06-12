@@ -28,7 +28,7 @@ class DBManager:
         
         with self.conn.cursor() as cur:
             cur.execute(schema_sql)
-            print("✅ Database initialized with normalized schema.")
+            print("Database initialized with normalized schema.")
     def insert_article(self, article_data: dict):
         query = """
             INSERT INTO articles (id, url, title, content, image_url, author, published_at, status)
@@ -47,6 +47,11 @@ class DBManager:
         )
         with self.conn.cursor() as cur:
             cur.execute(query, params)
+    def article_exists(self, article_id: str) -> bool:
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT id FROM articles WHERE id = %s", (article_id,))
+            return cur.fetchone() is not None
+        
     def get_pending_articles(self, limit=10):
         query = "SELECT * FROM articles WHERE status = 'pending' LIMIT %s"
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -57,15 +62,14 @@ class DBManager:
             cur.execute("INSERT INTO topics (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (topic_name,))
             cur.execute("SELECT id FROM topics WHERE name = %s", (topic_name,))
             return cur.fetchone()[0]
-    def link_article_to_topic(self, article_id, topic_id):
+    def link_article_to_topic(self, article_id, topic_id, is_global=False):
         with self.conn.cursor() as cur:
-            cur.execute("INSERT INTO article_topics (article_id, topic_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (article_id, topic_id))
+            cur.execute("INSERT INTO article_topics (article_id, topic_id, is_global) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING", (article_id, topic_id, is_global))
     def update_article_enrichment(self, article_id, data: dict):
         query = """
             UPDATE articles 
             SET summary = %s, global_relevance = %s, content_quality = %s, 
-                popularity_score = %s, ai_context = %s, ai_analysis = %s, 
-                ai_commentary = %s, status = 'processed'
+                popularity_score = %s, status = 'processed'
             WHERE id = %s
         """
         params = (
@@ -73,18 +77,55 @@ class DBManager:
             data['global_relevance'],
             data['content_quality'],
             data['popularity_score'],
-            data.get('ai_context'),
-            data.get('ai_analysis'),
-            data.get('ai_commentary'),
             article_id
         )
         with self.conn.cursor() as cur:
             cur.execute(query, params)
             
-        # Handle topics
+        # Handle specific topics
         for t_name in data.get('topics', []):
             t_id = self.get_or_create_topic(t_name)
-            self.link_article_to_topic(article_id, t_id)
+            self.link_article_to_topic(article_id, t_id, is_global=False)
+
+        # Handle global topics (for following)
+        for t_name in data.get('global_topics', []):
+            t_id = self.get_or_create_topic(t_name)
+            self.link_article_to_topic(article_id, t_id, is_global=True)
+
+    def get_article_topics(self, article_id):
+        query = """
+            SELECT t.id, t.name, t.embedding, at.is_global FROM topics t
+            JOIN article_topics at ON t.id = at.topic_id
+            WHERE at.article_id = %s
+        """
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query, (article_id,))
+            return cur.fetchall()
+
+    def update_article_analysis(self, article_id, data: dict):
+        def stringify(val):
+            if val is None:
+                return None
+            if isinstance(val, dict):
+                # Recursively extract values and join them
+                return "\n\n".join([stringify(v) for v in val.values() if v])
+            if isinstance(val, list):
+                return "\n\n".join([stringify(v) for v in val if v])
+            return str(val).strip()
+
+        query = """
+            UPDATE articles 
+            SET ai_explanation = %s, ai_analysis = %s, ai_commentary = %s
+            WHERE id = %s
+        """
+        params = (
+            stringify(data.get('ai_explanation')),
+            stringify(data.get('ai_analysis')),
+            stringify(data.get('ai_commentary')),
+            article_id
+        )
+        with self.conn.cursor() as cur:
+            cur.execute(query, params)
     def save_topic_embedding(self, topic_id, embedding):
         with self.conn.cursor() as cur:
             cur.execute("UPDATE topics SET embedding = %s WHERE id = %s", (Json(embedding), topic_id))
@@ -100,15 +141,6 @@ class DBManager:
         query = "SELECT * FROM user_interests WHERE user_id = %s"
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query, (user_id,))
-            return cur.fetchall()
-    def get_article_topics(self, article_id):
-        query = """
-            SELECT t.* FROM topics t
-            JOIN article_topics at ON t.id = at.topic_id
-            WHERE at.article_id = %s
-        """
-        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(query, (article_id,))
             return cur.fetchall()
     def save_article_score(self, score_data: dict):
         query = """
@@ -130,26 +162,28 @@ class DBManager:
             cur.execute(query, params)
     def get_for_you_articles(self, user_id, limit=20):
         query = """
-            SELECT a.*, s.for_you_score, s.trending_score
+            SELECT a.*, TO_CHAR(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at, 
+                   s.for_you_score, s.trending_score
             FROM articles a
             JOIN article_scores s ON a.id = s.article_id
-            WHERE s.user_id = %s AND a.status = 'processed'
-            ORDER BY s.for_you_score DESC
+            WHERE s.user_id = %s AND a.status = 'processed' AND s.for_you_score >= 0.65
+            ORDER BY (a.published_at AT TIME ZONE 'UTC')::DATE DESC, s.for_you_score DESC, s.trending_score DESC
             LIMIT %s
         """
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query, (user_id, limit))
             return cur.fetchall()
+            
     def get_trending_articles(self, limit=20, user_id=None):
         if user_id:
             query = """
-                SELECT a.*, 
+                SELECT a.*, TO_CHAR(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at, 
                        COALESCE(s.for_you_score, 0) as for_you_score, 
                        COALESCE(s.trending_score, 0) as trending_score
                 FROM articles a
                 LEFT JOIN article_scores s ON a.id = s.article_id AND s.user_id = %s
-                WHERE a.status = 'processed'
-                ORDER BY a.popularity_score DESC
+                WHERE a.status = 'processed' AND s.trending_score >= 0.70
+                ORDER BY (a.published_at AT TIME ZONE 'UTC')::DATE DESC, s.trending_score DESC
                 LIMIT %s
             """
             params = (user_id, limit)
@@ -157,18 +191,18 @@ class DBManager:
             query = """
                 SELECT *, 0 as for_you_score, 0 as trending_score FROM articles 
                 WHERE status = 'processed'
-                ORDER BY popularity_score DESC
+                ORDER BY published_at::DATE DESC, popularity_score DESC
                 LIMIT %s
             """
             params = (limit,)
-
+            
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query, params)
             return cur.fetchall()
     def get_article_by_id(self, article_id, user_id=None):
         if user_id:
             query = """
-                SELECT a.*, 
+                SELECT a.*, TO_CHAR(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at, 
                        COALESCE(s.for_you_score, 0) as for_you_score, 
                        COALESCE(s.trending_score, 0) as trending_score
                 FROM articles a
@@ -177,7 +211,10 @@ class DBManager:
             """
             params = (user_id, article_id)
         else:
-            query = "SELECT * FROM articles WHERE id = %s"
+            query = """
+                SELECT *, TO_CHAR(published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at 
+                FROM articles WHERE id = %s
+            """
             params = (article_id,)
         with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(query, params)
@@ -206,15 +243,10 @@ class DBManager:
         with self.conn.cursor() as cur:
             cur.execute(query, (user_id, interest_name))
     def record_article_read(self, user_id, article_id):
-        # 1. Record read
+        # Record read
         query = "INSERT INTO user_reads (user_id, article_id) VALUES (%s, %s) ON CONFLICT DO NOTHING"
         with self.conn.cursor() as cur:
             cur.execute(query, (user_id, article_id))
-            
-        # 2. Infer interests from topics
-        topics = self.get_article_topics(article_id)
-        for t in topics:
-            self.add_user_interest(user_id, t['name'], source='inferred', weight=0.2)
             
     def get_user_stats(self, user_id):
         stats = {}
@@ -228,6 +260,30 @@ class DBManager:
             stats['interests_count'] = cur.fetchone()[0]
             
         return stats
+
+    # ─── RSS SOURCES ─────────────────────────────────────────
+
+    def get_rss_sources(self):
+        query = "SELECT * FROM rss_sources ORDER BY name ASC"
+        with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(query)
+            return cur.fetchall()
+
+    def add_rss_source(self, name, url):
+        query = "INSERT INTO rss_sources (name, url) VALUES (%s, %s) RETURNING id"
+        with self.conn.cursor() as cur:
+            cur.execute(query, (name, url))
+            return cur.fetchone()[0]
+
+    def delete_rss_source(self, source_id):
+        query = "DELETE FROM rss_sources WHERE id = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(query, (source_id,))
+
+    def update_rss_source(self, source_id, name, url):
+        query = "UPDATE rss_sources SET name = %s, url = %s WHERE id = %s"
+        with self.conn.cursor() as cur:
+            cur.execute(query, (name, url, source_id))
 if __name__ == "__main__":
     db = DBManager()
     db.init_db()

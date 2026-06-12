@@ -8,14 +8,20 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.blueprints.articles import articles_bp
 from src.blueprints.users import users_bp
+from src.blueprints.sources import sources_bp
+from src.scheduler import scheduler
 
 def create_app():
     app = Flask(__name__)
     CORS(app) # Enable CORS for all routes
     
+    # Start background scheduler
+    # scheduler.start()
+
     # Register blueprints
     app.register_blueprint(articles_bp, url_prefix='/api/articles')
     app.register_blueprint(users_bp, url_prefix='/api/users')
+    app.register_blueprint(sources_bp, url_prefix='/api/sources')
     
     @app.route('/health')
     def health():

@@ -7,21 +7,42 @@ import ArticleDetail from "./pages/ArticleDetail";
 import Profile from "./pages/Profile";
 import Login from "./pages/Login";
 
+import ToastContainer from "./components/ToastContainer";
+import { useToast } from "./context/ToastContext";
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const { addToast } = useToast();
+
+  const syncUserFeed = async (userId) => {
+    try {
+      setSyncing(true);
+      const res = await fetch(`http://localhost:5000/api/users/${userId}/sync`, { method: "POST" });
+      if (!res.ok) throw new Error("Sync failed");
+    } catch (err) {
+      console.error("Failed to sync feed:", err);
+      addToast("Failed to refresh your feed. Check your connection.", "error");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    if (savedUser && !user) {
+      const u = JSON.parse(savedUser);
+      setUser(u);
+      syncUserFeed(u.id);
     }
     setLoading(false);
-  }, []);
+  }, [user]);
 
-  const handleLogin = (userData) => {
+  const handleLogin = async (userData) => {
     setUser(userData);
     localStorage.setItem("user", JSON.stringify(userData));
+    await syncUserFeed(userData.id);
   };
 
   const handleLogout = () => {
@@ -34,6 +55,13 @@ export default function App() {
   return (
     <BrowserRouter>
       {user && <Navbar user={user} onLogout={handleLogout} />}
+      {syncing && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, width: "100%", height: "3px", 
+          background: "linear-gradient(90deg, #ff0080, #7928ca)", zIndex: 9999,
+          animation: "loading-bar 2s infinite"
+        }} />
+      )}
       <Routes>
         {!user ? (
           <>
@@ -50,6 +78,7 @@ export default function App() {
           </>
         )}
       </Routes>
+      <ToastContainer />
     </BrowserRouter>
   );
 }

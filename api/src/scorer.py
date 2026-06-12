@@ -20,29 +20,32 @@ class Scorer:
 
     def get_embedding(self, text: str) -> list:
         """Get embedding from Gemini and return as list"""
-        time.sleep(0.3) # Rate limit
-        result = self.gemini_client.models.embed_content(
-            model=self.MODEL_EMBED,
-            contents=text
-        )
-        return result.embeddings[0].values
+        # Fallback to batch if possible, but keep for legacy
+        return self.get_embeddings_batch([text])[0]
 
-    # def enrich_user_interests(self, user_id, interests: list):
-    #     """Expand user interests and detect topics"""
-    #     print(f"👤 Enriching interests for user {user_id}...")
+    def get_embeddings_batch(self, texts: list) -> list:
+        """Batch get embeddings from Gemini. Limit texts to ~100 per call."""
+        if not texts:
+            return []
         
-    #     # 1. Expand interests
-    #     enriched_texts = []
-    #     for interest in interests:
-    #         enriched = self.expand_interest_llm(interest)
-    #         enriched_texts.append(enriched)
+        print(f"   [Gemini API] Batch embedding {len(texts)} items...")
+        try:
+            # google-genai supports list of contents for embed_content
+            result = self.gemini_client.models.embed_content(
+                model=self.MODEL_EMBED,
+                contents=texts
+            )
+            # result.embeddings is a list of objects with a values attribute
+            return [emb.values for emb in result.embeddings]
+        except Exception as e:
+            if "429" in str(e) or "quota" in str(e).lower():
+                print(f"      [Gemini API] Rate limit hit. {e}")
+                # Re-throw for higher level handling
+                raise e
+            print(f"      [Gemini API Error] {e}")
+            return [None] * len(texts)
         
-    #     full_enriched = ", ".join(enriched_texts)
-        
-    #     # 2. Detect topic categories
-    #     topics = self.detect_topics_llm(interests)
-        
-        # 3. Generate embeddings for enriched interests
+        # Generate embeddings for enriched interests
     def get_embedding_with_cache(self, text, type="topic", id=None, name=None, user_id=None):
         """Get embedding and save to DB if id/name provided"""
         emb = self.get_embedding(text)
@@ -58,23 +61,73 @@ class Scorer:
         norm = np.linalg.norm(v1) * np.linalg.norm(v2)
         return float(np.dot(v1, v2) / norm) if norm else 0.0
 
-    def score_all_for_user(self, user_id):
+    def score_all_for_user(self, user_id, only_unscored=True):
         """Score articles for a specific user using topic-based matching"""
-        # 1. Get user interests and their embeddings
+        # 1. Get user interests and ensure they have embeddings
         interests = self.db.get_user_interests(user_id)
-        interest_embs = []
-        for interest in interests:
-            if not interest['embedding']:
-                emb = self.get_embedding_with_cache(interest['interest_name'], type="interest", user_id=user_id, name=interest['interest_name'])
-            else:
-                emb = interest['embedding']
-            interest_embs.append(emb)
+        
+        missing_interest_names = [i['interest_name'] for i in interests if not i['embedding']]
+        if missing_interest_names:
+            print(f"👤 User {user_id} has {len(missing_interest_names)} missing interest embeddings. Batching...")
+            embs = self.get_embeddings_batch(missing_interest_names)
+            for name, emb in zip(missing_interest_names, embs):
+                if emb:
+                    self.db.save_interest_embedding(user_id, name, emb)
+            # Re-fetch with embeddings
+            interests = self.db.get_user_interests(user_id)
+            
+        interest_embs = [i['embedding'] for i in interests if i['embedding']]
 
-        # 2. Get processed articles
-        query = "SELECT * FROM articles WHERE status = 'processed'"
+        # 2. Get processed articles from the last 7 days
+        if only_unscored:
+            query = """
+                SELECT a.* FROM articles a
+                WHERE a.status = 'processed' 
+                  AND a.published_at > NOW() - INTERVAL '7 days'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM article_scores s 
+                    WHERE s.article_id = a.id AND s.user_id = %s
+                  )
+            """
+            params = (user_id,)
+        else:
+            query = "SELECT * FROM articles WHERE status = 'processed' AND published_at > NOW() - INTERVAL '7 days'"
+            params = ()
+
         with self.db.conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(query)
+            cur.execute(query, params)
             articles = cur.fetchall()
+
+        if not articles:
+            print(f"✅ No new articles to score for user {user_id}.")
+            return
+
+        # 3. Ensure all topics for THESE articles have embeddings
+        # Collect all unique topic IDs/names that need embeddings
+        all_topics_dict = {} # name -> id
+        missing_topic_ids = {} # id -> name
+        
+        for art in articles:
+            topics = self.db.get_article_topics(art['id'])
+            for t in topics:
+                if not t['embedding']:
+                    missing_topic_ids[t['id']] = t['name']
+        
+        if missing_topic_ids:
+            t_ids = list(missing_topic_ids.keys())
+            t_names = list(missing_topic_ids.values())
+            print(f"🏷️  System has {len(t_names)} missing topic embeddings. Batching...")
+            
+            # Group into batches of 50 to be extra safe with Gemini free tier (100 RPM)
+            for i in range(0, len(t_names), 50):
+                batch_names = t_names[i:i+50]
+                batch_ids = t_ids[i:i+50]
+                embs = self.get_embeddings_batch(batch_names)
+                for tid, emb in zip(batch_ids, embs):
+                    if emb:
+                        self.db.save_topic_embedding(tid, emb)
+                if i + 50 < len(t_names):
+                    time.sleep(2) # Breath between batches
 
         print(f"⚖️  Scoring {len(articles)} articles for user {user_id}...")
         for art in articles:
@@ -91,30 +144,54 @@ class Scorer:
         users = self.db.get_users()
         print(f"⚖️  Scoring article {article_id} for {len(users)} users...")
         
+        # 1. Pre-fetch ALL missing interest embeddings for ALL users
+        all_missing_interests = {} # (user_id, name) -> user_id
         for u in users:
-            # Get user interests
             interests = self.db.get_user_interests(u['id'])
-            interest_embs = []
-            for interest in interests:
-                if not interest['embedding']:
-                    emb = self.get_embedding_with_cache(interest['interest_name'], type="interest", user_id=u['id'], name=interest['interest_name'])
-                else:
-                    emb = interest['embedding']
-                interest_embs.append(emb)
+            for i in interests:
+                if not i['embedding']:
+                    all_missing_interests[(u['id'], i['interest_name'])] = u['id']
+        
+        if all_missing_interests:
+            print(f"👥 System has {len(all_missing_interests)} missing user interest embeddings. Batching...")
+            items = list(all_missing_interests.keys())
+            names = [item[1] for item in items]
             
+            for i in range(0, len(names), 50):
+                batch_names = names[i:i+50]
+                batch_items = items[i:i+50]
+                embs = self.get_embeddings_batch(batch_names)
+                for (uid, name), emb in zip(batch_items, embs):
+                    if emb:
+                        self.db.save_interest_embedding(uid, name, emb)
+                if i + 50 < len(names):
+                    time.sleep(1)
+
+        # 2. Ensure article topics have embeddings
+        topics = self.db.get_article_topics(article_id)
+        missing_topics = [(t['id'], t['name']) for t in topics if not t['embedding']]
+        if missing_topics:
+            print(f"🏷️  Article {article_id} has {len(missing_topics)} missing topic embeddings. Batching...")
+            embs = self.get_embeddings_batch([t[1] for t in missing_topics])
+            for (tid, name), emb in zip(missing_topics, embs):
+                if emb:
+                    self.db.save_topic_embedding(tid, emb)
+
+        # 3. Proceed with scoring
+        for u in users:
+            # Re-fetch interests with embeddings
+            interests = self.db.get_user_interests(u['id'])
+            interest_embs = [i['embedding'] for i in interests if i['embedding']]
             self._score_single(u['id'], art, interest_embs)
 
     def _score_single(self, user_id, art, interest_embs):
         """Helper to score one article for one user"""
         # 1. Get article topics and their embeddings
         topics = self.db.get_article_topics(art['id'])
-        topic_embs = []
-        for t in topics:
-            if not t['embedding']:
-                emb = self.get_embedding_with_cache(t['name'], type="topic", id=t['id'])
-            else:
-                emb = t['embedding']
-            topic_embs.append(emb)
+        topic_embs = [t['embedding'] for t in topics if t['embedding']]
+
+        # If somehow we still have missing embs (e.g. batch failed), skip them or fetch one-off
+        # But score_all_for_user should have handled this.
 
         # 2. Calculate Max Similarity
         max_sim = 0
@@ -131,7 +208,7 @@ class Scorer:
         popularity = art['popularity_score'] or 0.5
 
         # weights for "For You"
-        for_you = (max_sim * 0.6) + (relevance * 0.2) + (quality * 0.2)
+        for_you = (max_sim * 0.7) + (relevance * 0.2) + (quality * 0.1)
         
         # weights for "Trending"
         trending = (popularity * 0.6) + (relevance * 0.2) + (quality * 0.2)
