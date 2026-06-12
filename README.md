@@ -231,7 +231,7 @@ The ingestion pipeline runs **automatically** in the background when you start F
 | `DB_PORT` | `api/.env` | Database port (default: `5432`) |
 | `LIMIT_PER_SOURCE` | `api/src/rss_fetcher.py` | Max articles per RSS feed per run (default: `20`) |
 | `RSS_SOURCES` | `api/src/rss_fetcher.py` | Hardcoded list of RSS feed names + URLs |
-| Scheduler interval | `api/src/scheduler.py` | Pipeline run interval (default: `3600` seconds) |
+| Scheduler interval | `api/src/scheduler.py` | Pipeline run interval (default: `900` seconds) |
 
 ---
 
