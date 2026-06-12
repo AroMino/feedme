@@ -5,7 +5,7 @@ from src.pipeline import run as run_pipeline
 from src.utils.llm import RateLimitError
 
 class RSSScheduler:
-    def __init__(self, interval_seconds=3600):
+    def __init__(self, interval_seconds=600):
         self.interval = interval_seconds
         self.thread = None
         self.stop_event = threading.Event()

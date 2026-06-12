@@ -16,7 +16,7 @@ def create_app():
     CORS(app) # Enable CORS for all routes
     
     # Start background scheduler
-    # scheduler.start()
+    scheduler.start()
 
     # Register blueprints
     app.register_blueprint(articles_bp, url_prefix='/api/articles')

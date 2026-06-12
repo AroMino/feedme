@@ -8,7 +8,7 @@ from src.utils.text import make_id, clean_title, normalize_url
 import json
 
 # ─── CONFIG ───────────────────────────────────────────────
-LIMIT_PER_SOURCE = 20
+LIMIT_PER_SOURCE = 2
 
 RSS_SOURCES = [
     {"name": "BBC News - World",      "url": "http://feeds.bbci.co.uk/news/world/rss.xml"},
