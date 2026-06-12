@@ -24,26 +24,46 @@ class Scorer:
         return self.get_embeddings_batch([text])[0]
 
     def get_embeddings_batch(self, texts: list) -> list:
-        """Batch get embeddings from Gemini. Limit texts to ~100 per call."""
+        """Batch get embeddings from Gemini. Handles chunking and 429 errors."""
         if not texts:
             return []
         
-        print(f"   [Gemini API] Batch embedding {len(texts)} items...")
-        try:
-            # google-genai supports list of contents for embed_content
-            result = self.gemini_client.models.embed_content(
-                model=self.MODEL_EMBED,
-                contents=texts
-            )
-            # result.embeddings is a list of objects with a values attribute
-            return [emb.values for emb in result.embeddings]
-        except Exception as e:
-            if "429" in str(e) or "quota" in str(e).lower():
-                print(f"      [Gemini API] Rate limit hit. {e}")
-                # Re-throw for higher level handling
-                raise e
-            print(f"      [Gemini API Error] {e}")
-            return [None] * len(texts)
+        all_embeddings = []
+        # Gemini free tier is 100 RPM. We'll use chunks of 50.
+        for i in range(0, len(texts), 50):
+            chunk = texts[i:i+50]
+            print(f"   [Gemini API] Batch embedding {len(chunk)} items (chunk {i//50 + 1})...")
+            
+            retries = 3
+            while retries > 0:
+                try:
+                    result = self.gemini_client.models.embed_content(
+                        model=self.MODEL_EMBED,
+                        contents=chunk
+                    )
+                    all_embeddings.extend([emb.values for emb in result.embeddings])
+                    break # Success
+                except Exception as e:
+                    if "429" in str(e) or "quota" in str(e).lower():
+                        retries -= 1
+                        if retries > 0:
+                            wait_time = (4 - retries) * 10 # 10s, 20s
+                            print(f"      [Gemini API] Rate limit hit. Waiting {wait_time}s... ({retries} retries left)")
+                            time.sleep(wait_time)
+                            continue
+                        else:
+                            print(f"      [Gemini API] Quota exhausted after retries.")
+                            raise e
+                    print(f"      [Gemini API Error] {e}")
+                    # For non-429 errors, we might want to return None for this chunk
+                    all_embeddings.extend([None] * len(chunk))
+                    break
+            
+            # Short breath between chunks if more are coming
+            if i + 50 < len(texts):
+                time.sleep(2)
+                
+        return all_embeddings
         
         # Generate embeddings for enriched interests
     def get_embedding_with_cache(self, text, type="topic", id=None, name=None, user_id=None):
@@ -116,18 +136,16 @@ class Scorer:
         if missing_topic_ids:
             t_ids = list(missing_topic_ids.keys())
             t_names = list(missing_topic_ids.values())
-            print(f"🏷️  System has {len(t_names)} missing topic embeddings. Batching...")
+            print(f"🏷️  Scorer found {len(t_names)} missing topic embeddings. Fetching...")
             
-            # Group into batches of 50 to be extra safe with Gemini free tier (100 RPM)
-            for i in range(0, len(t_names), 50):
-                batch_names = t_names[i:i+50]
-                batch_ids = t_ids[i:i+50]
-                embs = self.get_embeddings_batch(batch_names)
-                for tid, emb in zip(batch_ids, embs):
+            # get_embeddings_batch now handles chunking and 429s
+            try:
+                embs = self.get_embeddings_batch(t_names)
+                for tid, emb in zip(t_ids, embs):
                     if emb:
                         self.db.save_topic_embedding(tid, emb)
-                if i + 50 < len(t_names):
-                    time.sleep(2) # Breath between batches
+            except Exception as e:
+                print(f"      [Warning] Could not fetch missing topic embeddings: {e}")
 
         print(f"⚖️  Scoring {len(articles)} articles for user {user_id}...")
         for art in articles:

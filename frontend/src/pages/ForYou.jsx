@@ -3,7 +3,7 @@ import ArticleCard from "../components/ArticleCard";
 import { Sparkles, AlertTriangle, Search } from "lucide-react";
 import { groupArticlesByDate } from "../utils/dateUtils";
 
-export default function ForYou({ user }) {
+export default function ForYou({ user, syncVersion }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,7 +20,7 @@ export default function ForYou({ user }) {
         setError("Failed to load articles.");
         setLoading(false);
       });
-  }, []);
+  }, [user.id, syncVersion]);
 
   if (loading) {
     return (

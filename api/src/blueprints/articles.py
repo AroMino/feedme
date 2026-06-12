@@ -5,7 +5,7 @@ db = DBManager()
 @articles_bp.route('/for-you', methods=['GET'])
 def get_for_you():
     user_id = request.args.get('user_id', default=1, type=int)
-    limit = request.args.get('limit', default=20, type=int)
+    limit = request.args.get('limit', default=50, type=int)
     
     articles = db.get_for_you_articles(user_id, limit)
     
@@ -17,7 +17,7 @@ def get_for_you():
 @articles_bp.route('/trending', methods=['GET'])
 def get_trending():
     user_id = request.args.get('user_id', type=int)
-    limit = request.args.get('limit', default=20, type=int)
+    limit = request.args.get('limit', default=50, type=int)
     
     articles = db.get_trending_articles(limit, user_id)
     

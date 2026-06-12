@@ -10,16 +10,59 @@ class ArticleProcessor:
 
     def process_pending_articles(self, limit=5):
         articles = self.db.get_pending_articles(limit=limit)
+        if not articles:
+            return
+            
         print(f"Processing {len(articles)} pending articles...")
         
+        all_new_topics = set()
         for art in articles:
             print(f"   -> Analyzing: {art['title'][:60]}...")
             enrichment = self.analyze_content(art['content'])
             if enrichment:
                 self.db.update_article_enrichment(art['id'], enrichment)
+                # Collect topics to ensure we have embeddings for them
+                topics = enrichment.get('topics', []) + enrichment.get('global_topics', [])
+                all_new_topics.update(topics)
                 print(f"      [OK] Enriched: {enrichment.get('topics', [])}")
             else:
                 print(f"      [Error] Enrichment failed for {art['id']}")
+
+        # Bulk fetch embeddings for all topics that don't have them yet
+        if all_new_topics:
+            self._ensure_topic_embeddings(list(all_new_topics))
+
+    def _ensure_topic_embeddings(self, topic_names):
+        """Fetch and save embeddings for topics that are missing them"""
+        missing_topics = []
+        for name in topic_names:
+            # We need the ID to save the embedding
+            topic_id = self.db.get_or_create_topic(name)
+            # Check if it already has an embedding
+            # Note: get_or_create_topic doesn't return the embedding, 
+            # so we might need a small helper or just attempt to fetch if we aren't sure.
+            # For simplicity, we'll use a direct query here or add a method to DB.
+            with self.db.conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM topics WHERE id = %s AND embedding IS NOT NULL", (topic_id,))
+                if not cur.fetchone():
+                    missing_topics.append((topic_id, name))
+        
+        if missing_topics:
+            print(f"🏷️  Found {len(missing_topics)} new topics needing embeddings. Batching...")
+            t_ids = [t[0] for t in missing_topics]
+            t_names = [t[1] for t in missing_topics]
+            
+            # Batch of 50 to avoid rate limits
+            for i in range(0, len(t_names), 50):
+                batch_names = t_names[i:i+50]
+                batch_ids = t_ids[i:i+50]
+                try:
+                    embs = self.scorer.get_embeddings_batch(batch_names)
+                    for tid, emb in zip(batch_ids, embs):
+                        if emb:
+                            self.db.save_topic_embedding(tid, emb)
+                except Exception as e:
+                    print(f"      [Warning] Failed to fetch embeddings for batch: {e}")
 
     def analyze_deep(self, content: str) -> dict:
         """Deep analysis focused on context, detailed analysis and commentary"""

@@ -220,7 +220,7 @@ export default function Profile({ user: activeUser, onLogout }) {
           </div>
 
           {/* RSS Sources */}
-          <RSSSourceManager />
+          {/* <RSSSourceManager /> */}
         </div>
       </div>
 

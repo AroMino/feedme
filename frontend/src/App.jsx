@@ -14,6 +14,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncVersion, setSyncVersion] = useState(0);
   const { addToast } = useToast();
 
   const syncUserFeed = async (userId) => {
@@ -21,6 +22,7 @@ export default function App() {
       setSyncing(true);
       const res = await fetch(`http://localhost:5000/api/users/${userId}/sync`, { method: "POST" });
       if (!res.ok) throw new Error("Sync failed");
+      setSyncVersion(prev => prev + 1);
     } catch (err) {
       console.error("Failed to sync feed:", err);
       addToast("Failed to refresh your feed. Check your connection.", "error");
@@ -70,8 +72,8 @@ export default function App() {
           </>
         ) : (
           <>
-            <Route path="/" element={<ForYou user={user} />} />
-            <Route path="/trending" element={<Trending />} />
+            <Route path="/" element={<ForYou user={user} syncVersion={syncVersion} />} />
+            <Route path="/trending" element={<Trending syncVersion={syncVersion} />} />
             <Route path="/article/:id" element={<ArticleDetail user={user} />} />
             <Route path="/profile" element={<Profile user={user} onLogout={handleLogout} />} />
             <Route path="/login" element={<Navigate to="/" replace />} />

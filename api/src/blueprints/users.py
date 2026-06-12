@@ -87,5 +87,9 @@ def sync_user_feed(user_id):
         status_code = 500
         if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
             status_code = 429
+            return jsonify({
+                "error": "The AI service is currently busy (quota exceeded).",
+                "message": "Please wait a minute and try again. The system is catching up with new articles."
+            }), status_code
             
         return jsonify({"error": error_msg}), status_code

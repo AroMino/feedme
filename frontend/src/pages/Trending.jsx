@@ -3,7 +3,7 @@ import ArticleCard from "../components/ArticleCard";
 import { Flame, AlertTriangle, TrendingUp } from "lucide-react";
 import { groupArticlesByDate } from "../utils/dateUtils";
 
-export default function Trending() {
+export default function Trending({ syncVersion }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -22,7 +22,7 @@ export default function Trending() {
         setError("Failed to load trending articles.");
         setLoading(false);
       });
-  }, []);
+  }, [syncVersion]);
 
   if (loading) {
     return (

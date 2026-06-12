@@ -160,7 +160,7 @@ class DBManager:
         )
         with self.conn.cursor() as cur:
             cur.execute(query, params)
-    def get_for_you_articles(self, user_id, limit=20):
+    def get_for_you_articles(self, user_id, limit=50):
         query = """
             SELECT a.*, TO_CHAR(a.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as published_at, 
                    s.for_you_score, s.trending_score
